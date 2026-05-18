@@ -8,6 +8,7 @@
 #          Pierrick Philippe <pierrick.philippe@orange.com>
 
 import subprocess
+import os
 
 from coolchic.bitstream.header.header import CoolChicHeader, FrameHeader, VideoHeader
 import torch
@@ -44,7 +45,10 @@ def encode_frame(
 
     # Delete existing bytes only for the very first video frame
     if frame_encoder.frame_display_index == 0:
-        subprocess.call(f"rm -f {bitstream_path}", shell=True)
+        try:
+            os.remove(bitstream_path)
+        except FileNotFoundError:
+            pass
         video_header = VideoHeader()
         video_header.set_header(coding_structure)
         bytes_to_write += video_header.to_bytes()
@@ -89,6 +93,7 @@ def encode_frame(
         )
         bytes_to_write += bytes_coolchic
 
+    os.makedirs(os.path.dirname(bitstream_path), exist_ok=True)
     with open(bitstream_path, "ab") as f_out:
         f_out.write(bytes_to_write)
 

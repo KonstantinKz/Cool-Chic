@@ -50,7 +50,11 @@ if __name__ == "__main__":
     parser.add(
         "-i",
         "--input",
-        help="Path of the input image. Either .png or .yuv",
+        help=(
+            "Path of the input image. Either a single .yuv / .png / .ppm path, "
+            "or three comma-separated PNG paths for 7-channel texture encoding: "
+            "diffuse.png,normal.png,rm.png"
+        ),
         type=str,
         required=True,
     )
@@ -344,6 +348,15 @@ if __name__ == "__main__":
         print(f"GPU: {name:20s} Mem: {total_memory:.0f}")
 
     args = parser.parse_args()
+
+    if "," in args.input:
+        parts = [p.strip() for p in args.input.split(",")]
+        assert len(parts) == 3, (
+            f"Texture input requires exactly 3 comma-separated PNG paths "
+            f"[diffuse, normal, rm], got {len(parts)}: {parts}"
+        )
+        args.input = parts
+
     print(args)
     print("----------")
     # useful for logging where different settings came from
@@ -453,7 +466,8 @@ if __name__ == "__main__":
         print(f"\nWriting bitstream to {args.output}")
         bytes_frame = encode_frame(frame_encoder, args.output, coding_structure)
 
-        name, ext = os.path.splitext(os.path.basename(args.input))
+        first_path = args.input[0] if isinstance(args.input, list) else args.input
+        name, ext = os.path.splitext(os.path.basename(first_path))
         results_log_path = f"{_get_frame_path_prefix(frame.display_order)}results_decoder.tsv"
         print(f"\nDecoding the bitstream, logging the results into: {results_log_path}")
 

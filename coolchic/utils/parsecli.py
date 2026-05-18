@@ -131,7 +131,7 @@ def get_coolchic_param_from_args(
 
     # Load the first image of the video to get the number of pixels
     frame = load_frame_data_from_file(args.input, idx_display_order=0)
-    if frame.frame_data_type in ["rgb", "yuv444"]:
+    if frame.frame_data_type in ["rgb", "yuv444", "texture"]:
         height, width = frame.data.size()[-2:]
     elif frame.frame_data_type in ["yuv420"]:
         height, width = frame.data.get("y").size()[-2:]
@@ -197,15 +197,19 @@ def get_coolchic_param_from_args(
 
 
 # ----- Arguments related to the coding structure
-def _is_image(file_path: str) -> bool:
-    """Return True is file extension is an image extension ie JPEG, PNG or PPM.
+def _is_image(file_path: str | list[str]) -> bool:
+    """Return True if file extension is an image extension ie JPEG, PNG or PPM.
+    Accepts either a single path or a list of paths (7-channel texture input);
+    in the latter case all paths must be images.
 
     Args:
-        file_path (str): Path of the file.
+        file_path: Path of the file, or list of paths for texture input.
 
     Returns:
-        bool: True is file is an "image".
+        bool: True if file (or all files in the list) is an "image".
     """
+    if isinstance(file_path, list):
+        return all(_is_image(p) for p in file_path)
 
     possible_file_extension = ["png", "jpeg", "jpg", "ppm"]
 
@@ -290,16 +294,23 @@ def get_coding_structure_from_args(args: argparse.Namespace) -> Dict[str, Any]:
 
     if "input" in args:
         if _is_image(args.input):
+            input_display = args.input[0] if isinstance(args.input, list) else args.input
             assert args.n_frames == 1, (
-                f"Encoding a PNG, JPEG or PPM image {args.input} must be done with"
+                f"Encoding a PNG, JPEG or PPM image {input_display} must be done with"
                 f" --n_frames=1. Found --n_frames = {args.n_frames}"
             )
+
+    if "input" in args:
+        first_path = args.input[0] if isinstance(args.input, list) else args.input
+        seq_name = os.path.basename(first_path).split(".")[0]
+    else:
+        seq_name = ""
 
     coding_structure_config = {
         "n_frames": n_frames,
         "intra_pos": _parse_frame_pos(args.intra_pos, n_frames),
         "p_pos": _parse_frame_pos(args.p_pos, n_frames),
-        "seq_name": os.path.basename(args.input).split(".")[0] if "input" in args else "",
+        "seq_name": seq_name,
         "frame_offset": frame_offset,
     }
     return coding_structure_config

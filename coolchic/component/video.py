@@ -41,24 +41,34 @@ def encode_one_frame(
     frame = coding_structure.get_frame_from_coding_order(coding_index)
 
     def change_n_out_synth(layers_synth: List[str], n_out: int) -> List[str]:
-        """Change the number of output features in the list of strings
-        describing the synthesis architecture. It replaces "X" with n_out. E.g.
+        """Change the number of output features in the synthesis layer list.
+        Handles both 'X' placeholders and pre-substituted values by detecting
+        the current output dim of the final layer and replacing all layers that
+        share that same dim (i.e. all layers that originally had 'X').
 
-        From [8-1-linear-relu,X-1-linear-none,X-3-residual-none]
-        To   [8-1-linear-relu,2-1-linear-none,2-3-residual-none]
-
-        If n_out = 2
-
-        Args:
-            layers_synth (List[str]): List of strings describing the different
-                synthesis layers
-            n_out (int): Number of desired output.
-
-        Returns:
-            List[str]: List of strings with the proper number of output features.
+        From [48-1-linear-relu, 3-1-linear-none, 3-3-residual-relu, 3-3-residual-none]
+        To   [48-1-linear-relu, 7-1-linear-none, 7-3-residual-relu, 7-3-linear-none]
+        if n_out = 7
         """
-        return [lay.replace("X", str(n_out)) for lay in layers_synth]
+        # First pass: replace any literal X tokens
+        result = [lay.replace("X", str(n_out)) for lay in layers_synth]
 
+        # Detect what value X was pre-substituted with by reading the last layer.
+        # All layers that originally had X share this same output dim.
+        old_out = result[-1].split("-")[0]
+
+        # Second pass: replace all layers whose output dim matches old_out
+        for i in range(len(result)):
+            parts = result[i].split("-")
+            if parts[0] == old_out:
+                parts[0] = str(n_out)
+                # Final layer must be linear — residual requires in==out channels
+                if i == len(result) - 1:
+                    parts[2] = "linear"
+                result[i] = "-".join(parts)
+
+        return result
+    
     print(
         "Frame being encoded\n"
         "-------------------\n\n"
@@ -89,7 +99,7 @@ def encode_one_frame(
         elif training_preset.lmbda < 0.0005:
             coolchic_enc_param[cc_enc_name].encoder_gain = 20
 
-        # YUV420 or YUV444 specific
+        # YUV420 or YUV444 specific — texture stays as img_min_max = None
         if frame.data.frame_data_type == "yuv420":
             img_min = torch.tensor([c.min().item() for c in frame.data.data.values()]).view(-1, 1)
             img_max = torch.tensor([c.max().item() for c in frame.data.data.values()]).view(-1, 1)
@@ -100,10 +110,13 @@ def encode_one_frame(
             img_min_max = torch.cat((img_min, img_max), dim=1)
 
     # Determine the number of output features for all cc_enc
+    # !! frame.data is now set — safe to read frame_data_type here !!
     n_ft_out_cc_enc = {}
     match frame.frame_type:
         case "I":
-            n_ft_out_cc_enc["residue"] = 3
+            print(f"[DEBUG AT MATCH] frame_data_type={frame.data.frame_data_type!r}")
+            n_ft_out_cc_enc["residue"] = 7 if frame.data.frame_data_type == "texture" else 3
+            print(f"[DEBUG AT MATCH] n_ft_out={n_ft_out_cc_enc['residue']}")
         case "P":
             n_ft_out_cc_enc["residue"] = 4
             n_ft_out_cc_enc["motion"] = 2
@@ -116,6 +129,14 @@ def encode_one_frame(
         coolchic_enc_param[cc_enc_name].layers_synthesis = change_n_out_synth(
             coolchic_enc_param[cc_enc_name].layers_synthesis, n_ft_out_cc_enc[cc_enc_name]
         )
+
+    # Quick sanity check — catch any remaining X before constructing the encoder
+    for cc_enc_name, cc_param in coolchic_enc_param.items():
+        for layer in cc_param.layers_synthesis:
+            assert "X" not in layer, (
+                f"Unresolved 'X' in {cc_enc_name} layers_synthesis after substitution: "
+                f"{cc_param.layers_synthesis}. frame_data_type={frame.data.frame_data_type}"
+            )
 
     # Log a few details about the model
     print(f"{training_preset.pretty_string()}")
@@ -176,6 +197,10 @@ def encode_one_frame(
 
     # Get the number of candidates from the initial warm-up phase
     n_candidates = training_preset.warmup.phases[0].candidates
+    
+    for cc_enc_name, cc_param in coolchic_enc_param.items():
+        print(f"[DEBUG] {cc_enc_name} layers_synthesis: {cc_param.layers_synthesis}")
+        print(f"[DEBUG] frame_data_type: {frame.data.frame_data_type}")
 
     list_candidates = []
     for idx_candidate in range(n_candidates):
@@ -320,7 +345,8 @@ def encode_one_frame(
 
     if frame.data.frame_data_type == "rgb":
         extension = ".png" if frame.data.bitdepth == 8 else ".ppm"
-    # YUV
+    elif frame.data.frame_data_type == "texture":
+        extension = ".png"  # write_7chpng derives the three output filenames from this base
     else:
         extension = ".yuv"
 

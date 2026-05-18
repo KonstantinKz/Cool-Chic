@@ -8,15 +8,24 @@ import numpy as np
 SAMPLE_PATH = f"{os.path.dirname(__file__)}/../samples/"
 
 
+def _remove_files(pattern: str) -> None:
+    """Remove all files matching a glob pattern, ignoring missing files."""
+    for path in glob.glob(pattern):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 # To be launched with python3 -m test.sanity_check from the root of the git repo
 def encode(
     seq_path: str, bitstream_path: str, workdir: str, n_frames: int = 1, extra_args: str = ""
 ) -> None:
     """Use Cool-chic to encode a sequence into a bitstream."""
 
-    subprocess.call(f"mkdir -p {workdir}", shell=True)
+    os.makedirs(workdir, exist_ok=True)
     # Delete already existing frame encoder
-    subprocess.call(f"rm -f {workdir}*-frame_encoder.pt", shell=True)
+    _remove_files(os.path.join(workdir, "*-frame_encoder.pt"))
 
     # ---- Get number of frames
     # Train the encoder
@@ -86,7 +95,7 @@ if __name__ == "__main__":
     # encoder logs and what we obtain at the decoder side.
     for seq_to_test in LIST_SEQ_TO_TEST:
         # Clean everything in TEST_WORKDIR
-        subprocess.call(f"rm -f {TEST_WORKDIR}/*", shell=True)
+        _remove_files(os.path.join(TEST_WORKDIR, "*"))
 
         seq_path = seq_to_test.get("path")
         extra_args = seq_to_test.get("extra_args")

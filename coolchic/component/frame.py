@@ -139,6 +139,8 @@ class FrameEncoder(nn.Module):
         self.index_references = index_references
         self.frame_display_index = frame_display_index
 
+        print(f"[DEBUG FrameEncoder] frame_data_type={frame_data_type!r}, layers_synthesis={coolchic_enc_param['residue'].layers_synthesis}")
+
         # Check we've passed the expected number of frames.
         all_expected_n_ref = {"I": 0, "P": 1, "B": 2}
         for frame_type, expected_n_ref in all_expected_n_ref.items():
