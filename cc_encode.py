@@ -505,6 +505,12 @@ if __name__ == "__main__":
             "coding_order": f"{frame.coding_order}",
         }
 
+        # Add per-group PSNRs for texture inputs
+        if logs.psnr_diffuse_db is not None:
+            results["psnr_diffuse_db"] = f"{logs.psnr_diffuse_db:9.7f}"
+            results["psnr_normal_db"]  = f"{logs.psnr_normal_db:9.7f}"
+            results["psnr_rm_db"]      = f"{logs.psnr_rm_db:9.7f}"
+
         header_str = ""
         value_str = ""
         for k, v in results.items():

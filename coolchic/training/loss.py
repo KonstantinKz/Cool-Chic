@@ -43,9 +43,19 @@ class LossFunctionOutput:
     mse_u: Optional[float] = None
     mse_v: Optional[float] = None
 
+    # Texture channel MSEs
+    mse_diffuse: Optional[float] = None
+    mse_normal: Optional[float] = None
+    mse_rm: Optional[float] = None
+
     psnr_y_db: Optional[float] = field(init=False, default=None)
     psnr_u_db: Optional[float] = field(init=False, default=None)
     psnr_v_db: Optional[float] = field(init=False, default=None)
+
+    # Texture channel PSNRs (derived in __post_init__)
+    psnr_diffuse_db: Optional[float] = field(init=False, default=None)
+    psnr_normal_db: Optional[float] = field(init=False, default=None)
+    psnr_rm_db: Optional[float] = field(init=False, default=None)
 
     # ==================== Not set by the init function ===================== #
     # Everything here is derived from the above metrics
@@ -76,6 +86,13 @@ class LossFunctionOutput:
             self.psnr_u_db = dist_to_db(self.mse_u)
         if self.mse_v is not None:
             self.psnr_v_db = dist_to_db(self.mse_v)
+
+        if self.mse_diffuse is not None:
+            self.psnr_diffuse_db = dist_to_db(self.mse_diffuse)
+        if self.mse_normal is not None:
+            self.psnr_normal_db = dist_to_db(self.mse_normal)
+        if self.mse_rm is not None:
+            self.psnr_rm_db = dist_to_db(self.mse_rm)
 
         if self.rate_latent_bpp is not None:
             self.total_rate_latent_bpp = sum(self.rate_latent_bpp.values())
@@ -253,6 +270,9 @@ def loss_function(
     mse_y = None
     mse_u = None
     mse_v = None
+    mse_diffuse = None
+    mse_normal = None
+    mse_rm = None
 
     if compute_logs:
         rate_latent_bpp = {
@@ -269,6 +289,12 @@ def loss_function(
             mse_u = _compute_mse(decoded_image.get("u"), target_image.get("u")).detach().item()
             mse_v = _compute_mse(decoded_image.get("v"), target_image.get("v")).detach().item()
 
+        elif isinstance(target_image, Tensor) and target_image.shape[1] == 7:
+            # [0:3] diffuse RGB, [3:5] normal RG, [5:7] roughness/metalness
+            mse_diffuse = _compute_mse(decoded_image[:, 0:3], target_image[:, 0:3]).detach().item()
+            mse_normal  = _compute_mse(decoded_image[:, 3:5], target_image[:, 3:5]).detach().item()
+            mse_rm      = _compute_mse(decoded_image[:, 5:7], target_image[:, 5:7]).detach().item()
+
     output = LossFunctionOutput(
         loss=loss,
         dist=final_dist.detach().item(),
@@ -279,6 +305,9 @@ def loss_function(
         mse_y=mse_y,
         mse_u=mse_u,
         mse_v=mse_v,
+        mse_diffuse=mse_diffuse,
+        mse_normal=mse_normal,
+        mse_rm=mse_rm,
     )
 
     return output
