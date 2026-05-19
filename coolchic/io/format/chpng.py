@@ -11,6 +11,28 @@ from torchvision.transforms.functional import to_tensor
 from coolchic.io.types import POSSIBLE_BITDEPTH
 
 
+def _open_as_float(path: str) -> Tensor:
+    """Open a PNG and return a float32 [C, H, W] tensor in [0, 1],
+    handling both 8-bit (mode RGB/L/RGBA) and 16-bit (mode I/I;16) correctly.
+    """
+    img = Image.open(path)
+
+    if img.mode == "I":
+        # 16-bit grayscale: PIL stores as int32, normalize by 2^16 - 1
+        arr = np.array(img, dtype=np.float32) / 65535.0          # [H, W]
+        arr = arr[:, :, np.newaxis]                               # [H, W, 1]
+        return torch.from_numpy(arr).permute(2, 0, 1)            # [1, H, W]
+
+    elif img.mode == "I;16":
+        arr = np.frombuffer(img.tobytes(), dtype=np.uint16)
+        arr = arr.reshape(img.size[1], img.size[0]).astype(np.float32) / 65535.0
+        arr = arr[:, :, np.newaxis]
+        return torch.from_numpy(arr).permute(2, 0, 1)            # [1, H, W]
+
+    else:
+        # 8-bit: RGB, RGBA, L — to_tensor handles these correctly
+        return to_tensor(img)                                     # [C, H, W]
+
 def read_7chpng(file_paths: list[str]) -> Tuple[Tensor, POSSIBLE_BITDEPTH]:
     """Read three PNG textures and pack them into a single 7-channel tensor.
 
@@ -35,9 +57,9 @@ def read_7chpng(file_paths: list[str]) -> Tuple[Tensor, POSSIBLE_BITDEPTH]:
         assert os.path.isfile(p), f"No file found at {p}"
 
     # [1, C, H, W] — C may be 3 or 4 (RGBA), we slice what we need
-    diffuse = to_tensor(Image.open(diffuse_path))  # [C, H, W]
-    normal  = to_tensor(Image.open(normal_path))
-    rm      = to_tensor(Image.open(rm_path))
+    diffuse = _open_as_float(diffuse_path)  # [C, H, W]
+    normal  = _open_as_float(normal_path)
+    rm      = _open_as_float(rm_path)
 
     diff_rgb = diffuse[:3]                                          # [3, H, W]
     norm_rg  = normal[:2]                                          # [2, H, W]
